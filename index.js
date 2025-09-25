@@ -1,6 +1,6 @@
 ymaps.ready(function () {
 
-    // Цвета округов
+    // Палитра округов
     const AO_COLORS = {
         "ЦАО": "#ffcccc",
         "ЮАО": "#ccffcc",
@@ -12,8 +12,8 @@ ymaps.ready(function () {
         "ЮВАО": "#ffcce0",
         "ЮЗАО": "#b3e6b3",
         "НАО": "#f0e68c",
-        "ЗЕЛАО": "#f5deb3",
-        // На случай если используются полные имена вместо аббревиатур:
+        "ЗелАО": "#f5deb3",
+        // на случай полного имени вместо аббревиатуры
         "ТРОИЦКИЙ": "#ffe4b5",
         "НОВОМОСКОВСКИЙ": "#dcdcdc",
         "ЗЕЛЕНОГРАДСКИЙ": "#f5deb3",
@@ -28,20 +28,11 @@ ymaps.ready(function () {
         "ЮГО-ЗАПАДНЫЙ": "#b3e6b3"
     };
 
-    // Утилиты: безопасная конвертация координат из GeoJSON в формат Yandex ([lat, lon])
-    const swapLngLatToLatLng = (pair) => [pair[1], pair[0]];
-
-    const convertPolygon = (coords) => {
-        // GeoJSON Polygon: [ [ [lng,lat] , ... ] , [ ...holes ] ]
-        // Yandex Polygon:   [ [ [lat,lng] , ... ] , [ ...holes ] ]
-        return coords.map(contour => contour.map(swapLngLatToLatLng));
-    };
-
-    const convertMultiPolygon = (coords) => {
-        // GeoJSON MultiPolygon: [ [ [ [lng,lat], ...] /*outer*/, [/*hole*/] ], ... /* more polygons */ ]
-        // Yandex MultiPolygon:  [ [ [ [lat,lng], ...], ... ], ... ]
-        return coords.map(polygon => polygon.map(contour => contour.map(swapLngLatToLatLng)));
-    };
+    // Хелперы конвертации координат GeoJSON -> Yandex ([lon,lat] -> [lat,lon])
+    const swapLngLatToLatLng = (p) => [p[1], p[0]];
+    const convertPolygon = (coords) => coords.map(contour => contour.map(swapLngLatToLatLng));
+    const convertMultiPolygon = (coords) =>
+        coords.map(polygon => polygon.map(contour => contour.map(swapLngLatToLatLng)));
 
     const myMap = new ymaps.Map("map", {
         center: [55.76, 37.64],
@@ -53,35 +44,30 @@ ymaps.ready(function () {
         ]
     });
 
-    // Удаляем лишние контролы
     ['geolocationControl','trafficControl','fullscreenControl','zoomControl','rulerControl','typeSelector']
         .forEach(ctrl => myMap.controls.remove(ctrl));
 
-    // Менеджер для точек
     const objectManager = new ymaps.ObjectManager({
         clusterize: true,
         clusterIconLayout: "default#pieChart"
     });
 
-    // 1) Загружаем точки
+    // 1) Точки из open.json (инвертируем только Point)
     fetch('open.json')
-        .then(response => response.json())
+        .then(r => r.json())
         .then(obj => {
-            let minLatitude = Infinity, maxLatitude = -Infinity;
-            let minLongitude = Infinity, maxLongitude = -Infinity;
+            let minLat = Infinity, maxLat = -Infinity;
+            let minLon = Infinity, maxLon = -Infinity;
 
-            // Инвертируем координаты только у Point
-            obj.features.forEach(feature => {
-                if (feature?.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)) {
-                    const [lon, lat] = feature.geometry.coordinates;
+            obj.features.forEach(f => {
+                if (f?.geometry?.type === "Point" && Array.isArray(f.geometry.coordinates)) {
+                    const [lon, lat] = f.geometry.coordinates;
                     if (typeof lon === 'number' && typeof lat === 'number') {
-                        feature.geometry.coordinates = [lat, lon]; // Yandex: [lat, lon]
-
-                        // Для приближений
-                        minLatitude = Math.min(minLatitude, lat);
-                        maxLatitude = Math.max(maxLatitude, lat);
-                        minLongitude = Math.min(minLongitude, lon);
-                        maxLongitude = Math.max(maxLongitude, lon);
+                        f.geometry.coordinates = [lat, lon]; // Yandex: [lat, lon]
+                        minLat = Math.min(minLat, lat);
+                        maxLat = Math.max(maxLat, lat);
+                        minLon = Math.min(minLon, lon);
+                        maxLon = Math.max(maxLon, lon);
                     }
                 }
             });
@@ -90,33 +76,28 @@ ymaps.ready(function () {
             objectManager.add(obj);
             myMap.geoObjects.add(objectManager);
 
-            // Поставим видимые границы по точкам, если есть валидные значения
-            if (
-                minLatitude !== Infinity && maxLatitude !== -Infinity &&
-                minLongitude !== Infinity && maxLongitude !== -Infinity
-            ) {
-                myMap.setBounds([[minLatitude, minLongitude], [maxLatitude, maxLongitude]], {
-                    checkZoomRange: true
-                });
+            if (minLat !== Infinity && maxLat !== -Infinity && minLon !== Infinity && maxLon !== -Infinity) {
+                myMap.setBounds([[minLat, minLon], [maxLat, maxLon]], { checkZoomRange: true });
             }
         })
         .catch(err => console.error('Ошибка загрузки open.json:', err));
 
-    // 2) Загружаем границы округов
+    // 2) Границы округов из ao.geojson
     fetch('ao.geojson')
-        .then(response => response.json())
+        .then(r => r.json())
         .then(geo => {
             geo.features.forEach(feature => {
                 const props = feature.properties || {};
-                const nameRaw = props.ABBREV || props.NAME || 'АО';
-                const nameKey = String(nameRaw).toUpperCase();
-                const color = AO_COLORS[nameKey] || "#dddddd";
+                const abbrev = props.ABBREV;        // например: 'ЦАО', 'СВАО', 'ЗелАО'
+                const nameRaw = props.NAME || abbrev || 'АО';
+                const colorKey = abbrev || String(nameRaw).toUpperCase();
+                const color = AO_COLORS[colorKey] || "#dddddd";
 
-                const baseProps = {
+                const commonProps = {
                     hintContent: nameRaw,
                     balloonContent: nameRaw
                 };
-                const baseOpts = {
+                const commonOpts = {
                     fillColor: color,
                     fillOpacity: 0.3,
                     strokeColor: "#333",
@@ -125,15 +106,17 @@ ymaps.ready(function () {
 
                 const geom = feature.geometry || {};
                 if (geom.type === 'Polygon' && Array.isArray(geom.coordinates)) {
-                    // Конвертация Polygon
                     const yaCoords = convertPolygon(geom.coordinates);
-                    const poly = new ymaps.Polygon(yaCoords, baseProps, baseOpts);
-                    myMap.geoObjects.add(poly);
+                    const polygon = new ymaps.Polygon(yaCoords, commonProps, commonOpts);
+                    myMap.geoObjects.add(polygon);
 
                 } else if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
-                    // Конвертация MultiPolygon
                     const yaCoordsMP = convertMultiPolygon(geom.coordinates);
-                    const mpoly = new ymaps.MultiPolygon(yaCoordsMP, baseProps, baseOpts);
+                    // В API нет конструктора ymaps.MultiPolygon — используем GeoObject:
+                    const mpoly = new ymaps.GeoObject({
+                        geometry: { type: 'MultiPolygon', coordinates: yaCoordsMP },
+                        properties: commonProps
+                    }, commonOpts);
                     myMap.geoObjects.add(mpoly);
                 }
             });
