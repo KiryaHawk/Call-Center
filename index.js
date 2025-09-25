@@ -1,6 +1,6 @@
 ymaps.ready(function () {
 
-    // Палитра округов
+    // Палитра цветов по округам
     const AO_COLORS = {
         "ЦАО": "#ffcccc",
         "ЮАО": "#ccffcc",
@@ -12,8 +12,8 @@ ymaps.ready(function () {
         "ЮВАО": "#ffcce0",
         "ЮЗАО": "#b3e6b3",
         "НАО": "#f0e68c",
-        "ЗелАО": "#f5deb3",
-        // на случай полного имени вместо аббревиатуры
+        "ЗЕЛАО": "#f5deb3",
+        // на случай, если вместо ABBREV придут полные названия:
         "ТРОИЦКИЙ": "#ffe4b5",
         "НОВОМОСКОВСКИЙ": "#dcdcdc",
         "ЗЕЛЕНОГРАДСКИЙ": "#f5deb3",
@@ -28,11 +28,11 @@ ymaps.ready(function () {
         "ЮГО-ЗАПАДНЫЙ": "#b3e6b3"
     };
 
-    // Хелперы конвертации координат GeoJSON -> Yandex ([lon,lat] -> [lat,lon])
-    const swapLngLatToLatLng = (p) => [p[1], p[0]];
-    const convertPolygon = (coords) => coords.map(contour => contour.map(swapLngLatToLatLng));
-    const convertMultiPolygon = (coords) =>
-        coords.map(polygon => polygon.map(contour => contour.map(swapLngLatToLatLng)));
+    // Хелперы: [lng,lat] -> [lat,lng]
+    const swapLngLat = p => [p[1], p[0]];
+    const convertPolygon = coords => coords.map(contour => contour.map(swapLngLat));
+    const convertMultiPolygonToPolygons = coords =>
+        coords.map(polygonContours => convertPolygon(polygonContours)); // вернёт массив отдельных полигонов
 
     const myMap = new ymaps.Map("map", {
         center: [55.76, 37.64],
@@ -44,17 +44,65 @@ ymaps.ready(function () {
         ]
     });
 
+    // Приберём лишние контролы
     ['geolocationControl','trafficControl','fullscreenControl','zoomControl','rulerControl','typeSelector']
         .forEach(ctrl => myMap.controls.remove(ctrl));
 
+    // Менеджер для точек
     const objectManager = new ymaps.ObjectManager({
         clusterize: true,
         clusterIconLayout: "default#pieChart"
     });
 
-    // 1) Точки из open.json (инвертируем только Point)
-    fetch('open.json')
+    // 1) Слой округов (рисуем раньше, чтобы точки были поверх)
+    fetch('ao.geojson')
         .then(r => r.json())
+        .then(geo => {
+            geo.features.forEach(feature => {
+                const props = feature.properties || {};
+                const abbrev = props.ABBREV;               // 'ЦАО', 'СВАО', 'ЗелАО', 'Троицкий' и т.п.
+                const nameRaw = props.NAME || abbrev || 'АО';
+                const colorKey = (abbrev || String(nameRaw).toUpperCase());
+                const color = AO_COLORS[colorKey] || "#dddddd";
+
+                const commonProps = {
+                    hintContent: nameRaw,
+                    balloonContent: nameRaw
+                };
+                const commonOpts = {
+                    fillColor: color,
+                    fillOpacity: 0.25,
+                    strokeColor: "#333",
+                    strokeWidth: 2,
+                    strokeOpacity: 0.9,
+                    zIndex: 5 // полигоны ниже меток
+                };
+
+                const geom = feature.geometry || {};
+                if (geom.type === 'Polygon' && Array.isArray(geom.coordinates)) {
+                    // Один полигон
+                    const yaCoords = convertPolygon(geom.coordinates);
+                    const polygon = new ymaps.Polygon(yaCoords, commonProps, commonOpts);
+                    myMap.geoObjects.add(polygon);
+
+                } else if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
+                    // Разбиваем мультиполигон на отдельные полигоны
+                    const polygons = convertMultiPolygonToPolygons(geom.coordinates);
+                    polygons.forEach(yaCoords => {
+                        const polygon = new ymaps.Polygon(yaCoords, commonProps, commonOpts);
+                        myMap.geoObjects.add(polygon);
+                    });
+                } else {
+                    // Неподдерживаемый тип геометрии – тихо пропускаем
+                    // console.warn('Unknown geometry type for AO feature:', geom.type);
+                }
+            });
+        })
+        .catch(err => console.error('Ошибка загрузки ao.geojson:', err));
+
+    // 2) Точки из open.json (инвертируем только Point)
+    fetch('open.json')
+        .then(response => response.json())
         .then(obj => {
             let minLat = Infinity, maxLat = -Infinity;
             let minLon = Infinity, maxLon = -Infinity;
@@ -81,45 +129,4 @@ ymaps.ready(function () {
             }
         })
         .catch(err => console.error('Ошибка загрузки open.json:', err));
-
-    // 2) Границы округов из ao.geojson
-    fetch('ao.geojson')
-        .then(r => r.json())
-        .then(geo => {
-            geo.features.forEach(feature => {
-                const props = feature.properties || {};
-                const abbrev = props.ABBREV;        // например: 'ЦАО', 'СВАО', 'ЗелАО'
-                const nameRaw = props.NAME || abbrev || 'АО';
-                const colorKey = abbrev || String(nameRaw).toUpperCase();
-                const color = AO_COLORS[colorKey] || "#dddddd";
-
-                const commonProps = {
-                    hintContent: nameRaw,
-                    balloonContent: nameRaw
-                };
-                const commonOpts = {
-                    fillColor: color,
-                    fillOpacity: 0.3,
-                    strokeColor: "#333",
-                    strokeWidth: 2
-                };
-
-                const geom = feature.geometry || {};
-                if (geom.type === 'Polygon' && Array.isArray(geom.coordinates)) {
-                    const yaCoords = convertPolygon(geom.coordinates);
-                    const polygon = new ymaps.Polygon(yaCoords, commonProps, commonOpts);
-                    myMap.geoObjects.add(polygon);
-
-                } else if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
-                    const yaCoordsMP = convertMultiPolygon(geom.coordinates);
-                    // В API нет конструктора ymaps.MultiPolygon — используем GeoObject:
-                    const mpoly = new ymaps.GeoObject({
-                        geometry: { type: 'MultiPolygon', coordinates: yaCoordsMP },
-                        properties: commonProps
-                    }, commonOpts);
-                    myMap.geoObjects.add(mpoly);
-                }
-            });
-        })
-        .catch(err => console.error('Ошибка загрузки ao.geojson:', err));
 });
