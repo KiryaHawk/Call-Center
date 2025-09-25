@@ -37,10 +37,10 @@ ymaps.ready(function () {
 
             // 🔁 Инвертируем координаты точек
             obj.features.forEach(feature => {
-                if (feature.geometry && feature.geometry.coordinates) {
+                if (feature.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)) {
                     const [lon, lat] = feature.geometry.coordinates;
-                    feature.geometry.coordinates = [lat, lon]; // <--- инверсия
-
+                    feature.geometry.coordinates = [lat, lon]; // инверсия
+            
                     minLatitude = Math.min(minLatitude, lat);
                     maxLatitude = Math.max(maxLatitude, lat);
                     minLongitude = Math.min(minLongitude, lon);
@@ -107,3 +107,4 @@ ymaps.ready(function () {
         });
 
 });
+
