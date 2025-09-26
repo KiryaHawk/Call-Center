@@ -9,13 +9,10 @@
   <!-- Яндекс.Карты -->
   <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=6c42bc19-1776-466a-900c-75c1c68e67f4" type="text/javascript"></script>
 
-  <!-- Фавикон (иконка вкладки). Положите файлы рядом с index.html -->
-  <!-- Если у вас один файл, используйте только первую строку и назовите его favicon.png -->
+  <!-- Фавикон (оставляем, чтобы иконка вкладки работала) -->
   <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=2">
-  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=2">
-  <!-- (опционально для iOS) -->
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
   <meta name="theme-color" content="#ffffff">
 
   <title>Call-Center</title>
@@ -23,33 +20,11 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     #map { max-width: 100%; width: auto; height: 100vh; }
-
-    /* Опционально: небольшой логотип поверх карты (правый верхний угол) */
-    #brand{
-      position: absolute;
-      right: 12px; top: 12px;
-      z-index: 1001;
-      background: rgba(255,255,255,.9);
-      padding: 6px 10px;
-      border-radius: 10px;
-      box-shadow: 0 4px 18px rgba(0,0,0,.12);
-    }
-    #brand img{
-      height: 28px;       /* при необходимости поменяйте размер */
-      width: auto;
-      display: block;
-    }
   </style>
 </head>
 <body>
 
   <div id="map"></div>
-
-  <!-- Опционально: покажите свой логотип поверх карты.
-       Положите рядом файл logo.png или смените src ниже.  -->
-  <div id="brand">
-    <img src="logo.png" alt="logo">
-  </div>
 
   <script src="index.js"></script>
 </body>
