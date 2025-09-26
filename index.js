@@ -61,7 +61,7 @@ ymaps.ready(function () {
   ['geolocationControl','trafficControl','fullscreenControl','zoomControl','rulerControl','typeSelector']
     .forEach(ctrl => myMap.controls.remove(ctrl));
 
-  // >>> Показывать подсказки сразу при наборе
+  // >>> Автоподсказки при наборе
   (function enableInstantSuggest(){
     const container = searchControl.getContainer && searchControl.getContainer();
     const input = container && container.querySelector('input[type="text"]');
