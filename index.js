@@ -13,7 +13,7 @@ ymaps.ready(function () {
         "ЮЗАО": "#b3e6b3",
         "НАО": "#f0e68c",
         "ЗелАО": "#f5deb3",
-        // на случай, если вместо ABBREV придут полные названия:
+        // на случай полных названий:
         "ТРОИЦКИЙ": "#ffe4b5",
         "НОВОМОСКОВСКИЙ": "#dcdcdc",
         "ЗЕЛЕНОГРАДСКИЙ": "#f5deb3",
@@ -28,13 +28,37 @@ ymaps.ready(function () {
         "ЮГО-ЗАПАДНЫЙ": "#b3e6b3"
     };
 
+    // Вставим CSS для «текстовых лейблов»
+    const style = document.createElement('style');
+    style.textContent = `
+      .ao-label{
+        position:relative;
+        transform: translate(-50%, -50%);
+        pointer-events:none;             /* не перехватывает клики */
+        font: 700 16px/1.1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+        color:#111;
+        text-align:center;
+        white-space:nowrap;
+        text-shadow:
+          0 0 2px #fff, 0 0 6px #fff,
+          1px 0 0 #fff, -1px 0 0 #fff, 0 1px 0 #fff, 0 -1px 0 #fff;
+      }
+      @media (max-width: 600px){ .ao-label{ font-size:12px; } }
+    `;
+    document.head.appendChild(style);
+
+    // Кастомный layout: чистый текст без иконки
+    const LabelLayout = ymaps.templateLayoutFactory.createClass(
+      '<div class="ao-label">$[properties.text]</div>'
+    );
+
     // Хелперы: [lng,lat] -> [lat,lng]
     const swapLngLat = p => [p[1], p[0]];
     const convertPolygon = coords => coords.map(contour => contour.map(swapLngLat));
     const convertMultiPolygonToPolygons = coords =>
         coords.map(polygonContours => convertPolygon(polygonContours)); // массив отдельных полигонов
 
-    // Получение bbox и центра для YA-полигонов ([ [ [lat,lng], ... ], [ ...hole ] ])
+    // Получение bbox и центра для YA-полигонов
     const getBoundsFromYaPolygon = (yaCoords) => {
         let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
         yaCoords.forEach(ring => {
@@ -55,13 +79,10 @@ ymaps.ready(function () {
         center: [55.76, 37.64],
         zoom: 7,
         controls: [
-            new ymaps.control.SearchControl({
-                options: { float: 'right', noPlacemark: true }
-            })
+            new ymaps.control.SearchControl({ options: { float: 'right', noPlacemark: true } })
         ]
     });
 
-    // Приберём лишние контролы
     ['geolocationControl','trafficControl','fullscreenControl','zoomControl','rulerControl','typeSelector']
         .forEach(ctrl => myMap.controls.remove(ctrl));
 
@@ -71,32 +92,29 @@ ymaps.ready(function () {
         clusterIconLayout: "default#pieChart"
     });
 
-    // 1) Слой округов (рисуем раньше, чтобы точки были поверх)
+    // 1) Слой округов (ниже точек), заливка плотнее и подписи текстом
     fetch('ao.geojson')
         .then(r => r.json())
         .then(geo => {
             geo.features.forEach(feature => {
                 const props = feature.properties || {};
-                const abbrev = props.ABBREV;               // 'ЦАО', 'СВАО', 'ЗелАО', 'Троицкий' и т.п.
+                const abbrev = props.ABBREV;
                 const nameRaw = props.NAME || abbrev || 'АО';
                 const colorKey = (abbrev || String(nameRaw).toUpperCase());
                 const color = AO_COLORS[colorKey] || "#dddddd";
 
-                const polyProps = {
-                    hintContent: nameRaw,
-                    balloonContent: nameRaw
-                };
+                const polyProps = { hintContent: nameRaw, balloonContent: nameRaw };
                 const polyOpts = {
                     fillColor: color,
-                    fillOpacity: 0.5,          // ← менее прозрачная заливка
+                    fillOpacity: 0.5,       // ← более плотная заливка
                     strokeColor: "#222",
                     strokeWidth: 2,
                     strokeOpacity: 0.95,
-                    zIndex: 5                  // полигоны ниже меток и точек
+                    zIndex: 5
                 };
 
                 const geom = feature.geometry || {};
-                let unionBounds = null;        // общий bbox для подписи
+                let unionBounds = null; // общий bbox для подписи
 
                 if (geom.type === 'Polygon' && Array.isArray(geom.coordinates)) {
                     const yaCoords = convertPolygon(geom.coordinates);
@@ -126,16 +144,18 @@ ymaps.ready(function () {
                     });
                 }
 
-                // Подпись округа (центр по объединённым bounds)
+                // Подпись округа как «текст без метки»
                 if (unionBounds) {
                     const center = centerFromBounds(unionBounds);
                     const label = new ymaps.Placemark(
                         center,
-                        { iconCaption: nameRaw },
+                        { text: nameRaw },
                         {
-                            preset: 'islands#blackCircleDotIconWithCaption',
-                            iconCaptionMaxWidth: 320,
-                            zIndex: 200          // подпись поверх заливки
+                            iconLayout: LabelLayout, // чистый текст
+                            hasBalloon: false,
+                            hasHint: false,
+                            zIndex: 200,             // над заливкой и точками кластера
+                            zIndexHover: 200
                         }
                     );
                     myMap.geoObjects.add(label);
