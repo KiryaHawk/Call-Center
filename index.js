@@ -56,10 +56,10 @@ ymaps.ready(function () {
     options: {
       float: 'right',
       provider: 'yandex#search',
-      noPlacemark: true,  // не ставим метки автоматически
-      noCentering: true,  // НЕ центрируем карту при выборе результата
-      noSelect: true,     // НЕ выбираем автоматически первый результат
-      useMapBounds: false // подсказки ограничим вручную через SuggestView
+      noPlacemark: true,
+      noCentering: true,
+      noSelect: true,
+      useMapBounds: false
     }
   });
 
@@ -69,26 +69,48 @@ ymaps.ready(function () {
     controls: [searchControl]
   });
 
-  // Подсказки в поиске (выпадающий список при вводе)
-  const inputEl = searchControl.getContainer().querySelector('input[type="text"]');
-  if (inputEl) {
-    const suggestView = new ymaps.SuggestView(inputEl, {
+  // Надёжное получение DOM-поля ввода у SearchControl
+  function getSearchInput() {
+    try {
+      if (typeof searchControl.getContainer === 'function') {
+        const el = searchControl.getContainer().querySelector('input[type="text"]');
+        if (el) return el;
+      }
+    } catch (e) {}
+    // fallback: ищем внутри контейнера карты
+    const mapEl = myMap.container.getElement();
+    return mapEl ? mapEl.querySelector('input[type="text"]') : null;
+  }
+
+  // Инициализируем SuggestView после того, как контрол отрисуется
+  setTimeout(() => {
+    const inputEl = getSearchInput();
+    if (!inputEl) return;
+
+    // SuggestView принимает ID — дадим инпуту стабильный ID
+    if (!inputEl.id) inputEl.id = 'mapSearchInput';
+
+    const suggestView = new ymaps.SuggestView(inputEl.id, {
       results: 20,
       boundedBy: myMap.getBounds(),
       strictBounds: false
     });
 
-    // обновляем зону подсказок при перемещении карты
     myMap.events.add('boundschange', () => {
       suggestView.options.set('boundedBy', myMap.getBounds());
     });
 
-    // при выборе из списка просто запрашиваем результаты в контроле (карта не прыгает)
-    suggestView.events.add('select', e => {
-      const value = e.get('item').value;
-      searchControl.search(value);
+    // Enter — запускаем поиск вручную (карта не прыгает из-за noCentering/noSelect)
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') searchControl.search(inputEl.value);
     });
-  }
+
+    // Выбор подсказки — запрашиваем результаты в контроле
+    suggestView.events.add('select', (e) => {
+      const val = e.get('item').value;
+      searchControl.search(val);
+    });
+  }, 300);
 
   // убираем лишние контролы
   ['geolocationControl','trafficControl','fullscreenControl','zoomControl','rulerControl','typeSelector']
@@ -99,7 +121,7 @@ ymaps.ready(function () {
     clusterIconLayout: "default#pieChart"
   });
 
-  // Подписи округов: легкий автоподбор размера
+  // Подписи округов: автоподбор размера
   const updateLabelSizeByZoom = () => {
     const z = myMap.getZoom();
     let size = 16;
@@ -128,7 +150,7 @@ ymaps.ready(function () {
 
         const polyOpts = {
           fillColor: color,
-          fillOpacity: 0.55,   // менее прозрачная заливка
+          fillOpacity: 0.55,
           strokeColor: '#222',
           strokeWidth: 2,
           strokeOpacity: 0.95,
@@ -228,9 +250,9 @@ ymaps.ready(function () {
 
       obj.features.forEach(f => {
         if (f?.geometry?.type === "Point" && Array.isArray(f.geometry.coordinates)) {
-          const [lon, lat] = f.geometry.coordinates;     // в файле как [lon, lat]
+          const [lon, lat] = f.geometry.coordinates; // в файле как [lon, lat]
           if (typeof lon === 'number' && typeof lat === 'number') {
-            f.geometry.coordinates = [lat, lon];         // для ЯК: [lat, lon]
+            f.geometry.coordinates = [lat, lon];     // для ЯК: [lat, lon]
             minLat = Math.min(minLat, lat);  maxLat = Math.max(maxLat, lat);
             minLon = Math.min(minLon, lon);  maxLon = Math.max(maxLon, lon);
           }
