@@ -12,7 +12,7 @@ ymaps.ready(function () {
         "ЮВАО": "#ffcce0",
         "ЮЗАО": "#b3e6b3",
         "НАО": "#f0e68c",
-        "ЗЕЛАО": "#f5deb3",
+        "ЗелАО": "#f5deb3",
         // на случай, если вместо ABBREV придут полные названия:
         "ТРОИЦКИЙ": "#ffe4b5",
         "НОВОМОСКОВСКИЙ": "#dcdcdc",
@@ -32,7 +32,24 @@ ymaps.ready(function () {
     const swapLngLat = p => [p[1], p[0]];
     const convertPolygon = coords => coords.map(contour => contour.map(swapLngLat));
     const convertMultiPolygonToPolygons = coords =>
-        coords.map(polygonContours => convertPolygon(polygonContours)); // вернёт массив отдельных полигонов
+        coords.map(polygonContours => convertPolygon(polygonContours)); // массив отдельных полигонов
+
+    // Получение bbox и центра для YA-полигонов ([ [ [lat,lng], ... ], [ ...hole ] ])
+    const getBoundsFromYaPolygon = (yaCoords) => {
+        let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+        yaCoords.forEach(ring => {
+            ring.forEach(([lat, lon]) => {
+                if (typeof lat === 'number' && typeof lon === 'number') {
+                    minLat = Math.min(minLat, lat);
+                    maxLat = Math.max(maxLat, lat);
+                    minLon = Math.min(minLon, lon);
+                    maxLon = Math.max(maxLon, lon);
+                }
+            });
+        });
+        return (minLat === Infinity) ? null : [[minLat, minLon], [maxLat, maxLon]];
+    };
+    const centerFromBounds = (b) => [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2];
 
     const myMap = new ymaps.Map("map", {
         center: [55.76, 37.64],
@@ -65,36 +82,63 @@ ymaps.ready(function () {
                 const colorKey = (abbrev || String(nameRaw).toUpperCase());
                 const color = AO_COLORS[colorKey] || "#dddddd";
 
-                const commonProps = {
+                const polyProps = {
                     hintContent: nameRaw,
                     balloonContent: nameRaw
                 };
-                const commonOpts = {
+                const polyOpts = {
                     fillColor: color,
-                    fillOpacity: 0.25,
-                    strokeColor: "#333",
+                    fillOpacity: 0.5,          // ← менее прозрачная заливка
+                    strokeColor: "#222",
                     strokeWidth: 2,
-                    strokeOpacity: 0.9,
-                    zIndex: 5 // полигоны ниже меток
+                    strokeOpacity: 0.95,
+                    zIndex: 5                  // полигоны ниже меток и точек
                 };
 
                 const geom = feature.geometry || {};
+                let unionBounds = null;        // общий bbox для подписи
+
                 if (geom.type === 'Polygon' && Array.isArray(geom.coordinates)) {
-                    // Один полигон
                     const yaCoords = convertPolygon(geom.coordinates);
-                    const polygon = new ymaps.Polygon(yaCoords, commonProps, commonOpts);
+                    const polygon = new ymaps.Polygon(yaCoords, polyProps, polyOpts);
                     myMap.geoObjects.add(polygon);
 
+                    const b = getBoundsFromYaPolygon(yaCoords);
+                    if (b) unionBounds = b;
+
                 } else if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
-                    // Разбиваем мультиполигон на отдельные полигоны
                     const polygons = convertMultiPolygonToPolygons(geom.coordinates);
                     polygons.forEach(yaCoords => {
-                        const polygon = new ymaps.Polygon(yaCoords, commonProps, commonOpts);
+                        const polygon = new ymaps.Polygon(yaCoords, polyProps, polyOpts);
                         myMap.geoObjects.add(polygon);
+
+                        const b = getBoundsFromYaPolygon(yaCoords);
+                        if (b) {
+                            if (!unionBounds) {
+                                unionBounds = b;
+                            } else {
+                                unionBounds = [
+                                    [Math.min(unionBounds[0][0], b[0][0]), Math.min(unionBounds[0][1], b[0][1])],
+                                    [Math.max(unionBounds[1][0], b[1][0]), Math.max(unionBounds[1][1], b[1][1])]
+                                ];
+                            }
+                        }
                     });
-                } else {
-                    // Неподдерживаемый тип геометрии – тихо пропускаем
-                    // console.warn('Unknown geometry type for AO feature:', geom.type);
+                }
+
+                // Подпись округа (центр по объединённым bounds)
+                if (unionBounds) {
+                    const center = centerFromBounds(unionBounds);
+                    const label = new ymaps.Placemark(
+                        center,
+                        { iconCaption: nameRaw },
+                        {
+                            preset: 'islands#blackCircleDotIconWithCaption',
+                            iconCaptionMaxWidth: 320,
+                            zIndex: 200          // подпись поверх заливки
+                        }
+                    );
+                    myMap.geoObjects.add(label);
                 }
             });
         })
