@@ -51,12 +51,26 @@ ymaps.ready(function () {
   const convertMultiPolygonToPolygons = coords => coords.map(poly => convertPolygon(poly));
 
   // ===== Карта =====
+  const searchControl = new ymaps.control.SearchControl({
+    options:{ float:'right', noPlacemark:true }
+  });
   const myMap = new ymaps.Map("map", {
     center: [55.76, 37.64], zoom: 9,
-    controls: [new ymaps.control.SearchControl({ options:{ float:'right', noPlacemark:true } })]
+    controls: [searchControl]
   });
   ['geolocationControl','trafficControl','fullscreenControl','zoomControl','rulerControl','typeSelector']
     .forEach(ctrl => myMap.controls.remove(ctrl));
+
+  // >>> Показывать подсказки сразу при наборе
+  (function enableInstantSuggest(){
+    const container = searchControl.getContainer && searchControl.getContainer();
+    const input = container && container.querySelector('input[type="text"]');
+    if (input){
+      if (!input.id) input.id = 'map-search-input';
+      new ymaps.SuggestView(input.id);
+    }
+  })();
+  // <<<
 
   const objectManager = new ymaps.ObjectManager({ clusterize:true, clusterIconLayout:"default#pieChart" });
 
