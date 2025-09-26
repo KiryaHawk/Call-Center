@@ -51,9 +51,16 @@ ymaps.ready(function () {
   const convertPolygon = coords => coords.map(contour => contour.map(swapLngLat));
   const convertMultiPolygonToPolygons = coords => coords.map(poly => convertPolygon(poly));
 
-  // ===== Карта + поиск =====
+  // ===== Карта + поиск с подсказками =====
   const searchControl = new ymaps.control.SearchControl({
-    options: { float:'right', noPlacemark:true, provider:'yandex#search' }
+    options: {
+      float: 'right',
+      provider: 'yandex#search',
+      noPlacemark: true,  // не ставим метки автоматически
+      noCentering: true,  // НЕ центрируем карту при выборе результата
+      noSelect: true,     // НЕ выбираем автоматически первый результат
+      useMapBounds: false // подсказки ограничим вручную через SuggestView
+    }
   });
 
   const myMap = new ymaps.Map("map", {
@@ -63,33 +70,36 @@ ymaps.ready(function () {
   });
 
   // Подсказки в поиске (выпадающий список при вводе)
-  setTimeout(() => {
-    try {
-      const inputEl = searchControl.getContainer().querySelector('input');
-      if (inputEl) {
-        const suggest = new ymaps.SuggestView(inputEl, { results: 20 });
-        inputEl.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') searchControl.search(inputEl.value);
-        });
-        suggest.events.add('select', (e) => {
-          const val = e.get('item').value;
-          searchControl.search(val);
-        });
-      }
-    } catch (e) {
-      console.warn('SuggestView init error:', e);
-    }
-  }, 300);
+  const inputEl = searchControl.getContainer().querySelector('input[type="text"]');
+  if (inputEl) {
+    const suggestView = new ymaps.SuggestView(inputEl, {
+      results: 20,
+      boundedBy: myMap.getBounds(),
+      strictBounds: false
+    });
 
+    // обновляем зону подсказок при перемещении карты
+    myMap.events.add('boundschange', () => {
+      suggestView.options.set('boundedBy', myMap.getBounds());
+    });
+
+    // при выборе из списка просто запрашиваем результаты в контроле (карта не прыгает)
+    suggestView.events.add('select', e => {
+      const value = e.get('item').value;
+      searchControl.search(value);
+    });
+  }
+
+  // убираем лишние контролы
   ['geolocationControl','trafficControl','fullscreenControl','zoomControl','rulerControl','typeSelector']
     .forEach(ctrl => myMap.controls.remove(ctrl));
 
   const objectManager = new ymaps.ObjectManager({
-    clusterize:true,
-    clusterIconLayout:"default#pieChart"
+    clusterize: true,
+    clusterIconLayout: "default#pieChart"
   });
 
-  // Подписи: небольшой автоподбор размера (чтобы не расползались)
+  // Подписи округов: легкий автоподбор размера
   const updateLabelSizeByZoom = () => {
     const z = myMap.getZoom();
     let size = 16;
@@ -118,7 +128,7 @@ ymaps.ready(function () {
 
         const polyOpts = {
           fillColor: color,
-          fillOpacity: 0.55,    // менее прозрачная заливка
+          fillOpacity: 0.55,   // менее прозрачная заливка
           strokeColor: '#222',
           strokeWidth: 2,
           strokeOpacity: 0.95,
@@ -152,7 +162,6 @@ ymaps.ready(function () {
   const CATEGORY_CODES = ["A(L)","B(M1)","B(N1)","C(N2)","C(N3)","E(O1)","E(O2)","E(O3)","E(O4)"];
   const selected = new Set();
 
-  // Панель фильтра
   const panel = document.createElement('div');
   panel.className = 'filter-panel';
   panel.innerHTML = `
@@ -188,7 +197,6 @@ ymaps.ready(function () {
   function getCatsFromObj(obj) {
     if (Array.isArray(obj.properties?.cats)) return obj.properties.cats;
     if (Array.isArray(obj.properties?._catsDetected)) return obj.properties._catsDetected;
-
     const html = String(obj.properties?.balloonContentBody || '');
     const cats = [];
     CATEGORY_CODES.forEach(code => {
@@ -220,9 +228,9 @@ ymaps.ready(function () {
 
       obj.features.forEach(f => {
         if (f?.geometry?.type === "Point" && Array.isArray(f.geometry.coordinates)) {
-          const [lon, lat] = f.geometry.coordinates;      // в файле как [lon, lat]
+          const [lon, lat] = f.geometry.coordinates;     // в файле как [lon, lat]
           if (typeof lon === 'number' && typeof lat === 'number') {
-            f.geometry.coordinates = [lat, lon];          // для ЯК: [lat, lon]
+            f.geometry.coordinates = [lat, lon];         // для ЯК: [lat, lon]
             minLat = Math.min(minLat, lat);  maxLat = Math.max(maxLat, lat);
             minLon = Math.min(minLon, lon);  maxLon = Math.max(maxLon, lon);
           }
