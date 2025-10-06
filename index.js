@@ -183,7 +183,7 @@ ymaps.ready(function () {
   }
 
   // Загружаем open.json и инвертируем координаты Point
-  fetch('open.json').then(r=>r.json()).then(obj=>{
+  fetch('Call_Center.json').then(r=>r.json()).then(obj=>{
     let minLat=Infinity, maxLat=-Infinity, minLon=Infinity, maxLon=-Infinity;
 
     obj.features.forEach(f=>{
@@ -208,3 +208,4 @@ ymaps.ready(function () {
   }).catch(err=>console.error('Ошибка open.json:', err));
 
 });
+
